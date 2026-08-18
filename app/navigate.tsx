@@ -48,6 +48,7 @@ export default function NavigateScreen() {
   const { speak } = useSpeech();
   const { pulse } = useHaptics();
   const watchSubscription = useRef<Location.LocationSubscription | null>(null);
+  const currentStepIndexRef = useRef(0);
 
   useEffect(() => {
     return () => {
@@ -56,6 +57,7 @@ export default function NavigateScreen() {
   }, []);
 
   const handleStart = useCallback(async () => {
+    watchSubscription.current?.remove();
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') {
       router.replace({ pathname: '/permissions-needed', params: { permission: 'location' } });
@@ -72,6 +74,7 @@ export default function NavigateScreen() {
       const routeSteps = await fetchWalkingRoute(origin, destination);
       setSteps(routeSteps);
       setCurrentStepIndex(0);
+      currentStepIndexRef.current = 0;
       speak(routeSteps[0]?.instruction ?? 'Itinéraire introuvable.');
 
       watchSubscription.current = await Location.watchPositionAsync(
@@ -81,9 +84,10 @@ export default function NavigateScreen() {
             latitude: update.coords.latitude,
             longitude: update.coords.longitude,
           };
-          const nextStep = routeSteps[currentStepIndex + 1];
+          const nextStep = routeSteps[currentStepIndexRef.current + 1];
           if (nextStep && shouldRecalculateRoute(current, nextStep.location) === false) {
-            setCurrentStepIndex((index) => index + 1);
+            currentStepIndexRef.current += 1;
+            setCurrentStepIndex(currentStepIndexRef.current);
             pulse('medium');
             speak(nextStep.instruction);
           }
