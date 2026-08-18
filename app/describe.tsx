@@ -1,8 +1,8 @@
 // app/describe.tsx
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { View, Pressable, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Camera, useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
+import { Camera, useCameraDevice, useCameraPermission, usePhotoOutput } from 'react-native-vision-camera';
 import { PhotoRecognizer } from 'react-native-vision-camera-ocr-plus';
 import { useImageFaceDetector } from 'react-native-vision-camera-face-detector';
 import { composeDescription } from '../src/logic/describeComposer';
@@ -12,7 +12,7 @@ export default function DescribeScreen() {
   const router = useRouter();
   const { hasPermission, requestPermission } = useCameraPermission();
   const device = useCameraDevice('back');
-  const cameraRef = useRef<Camera>(null);
+  const photoOutput = usePhotoOutput();
   const [isProcessing, setIsProcessing] = useState(false);
   const { speak } = useSpeech();
   const faceDetector = useImageFaceDetector({ performanceMode: 'fast' });
@@ -28,11 +28,11 @@ export default function DescribeScreen() {
   }, [hasPermission, requestPermission, router]);
 
   const handleCapture = useCallback(async () => {
-    if (!cameraRef.current || isProcessing) return;
+    if (isProcessing) return;
     setIsProcessing(true);
     try {
-      const photo = await cameraRef.current.takePhoto();
-      const uri = `file://${photo.path}`;
+      const { filePath } = await photoOutput.capturePhotoToFile({}, {});
+      const uri = `file://${filePath}`;
 
       const [ocrResult, faces] = await Promise.all([
         PhotoRecognizer({ uri, orientation: 'portrait' }),
@@ -48,7 +48,7 @@ export default function DescribeScreen() {
     } finally {
       setIsProcessing(false);
     }
-  }, [faceDetector, isProcessing, speak]);
+  }, [faceDetector, isProcessing, photoOutput, speak]);
 
   if (!hasPermission || device == null) {
     return (
@@ -60,7 +60,7 @@ export default function DescribeScreen() {
 
   return (
     <View style={styles.container}>
-      <Camera ref={cameraRef} style={StyleSheet.absoluteFill} isActive photo device={device} />
+      <Camera style={StyleSheet.absoluteFill} isActive device={device} outputs={[photoOutput]} />
       <Pressable
         style={styles.captureButton}
         onPress={handleCapture}
