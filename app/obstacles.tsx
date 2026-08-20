@@ -14,7 +14,8 @@ import { useResizer } from 'react-native-vision-camera-resizer';
 import { NitroModules } from 'react-native-nitro-modules';
 import { scheduleOnRN } from 'react-native-worklets';
 import { Asset } from 'expo-asset';
-import { File } from 'expo-file-system';
+import { File, Paths } from 'expo-file-system';
+import * as Battery from 'expo-battery';
 import {
   getProximityLevel,
   shouldAnnounce,
@@ -33,6 +34,9 @@ const CAMERA_CONSTRAINTS: Constraint[] = [{ fps: 5 }];
 // level — long enough to ignore a single dropped-detection flicker, short
 // enough that a genuinely departed obstacle doesn't silence the next one.
 const NO_DETECTION_RESET_FRAMES = 10;
+const LOW_BATTERY_THRESHOLD = 0.15;
+const BATTERY_CHECK_INTERVAL_MS = 30000;
+const DISCLAIMER_MARKER_FILENAME = 'obstacles-disclaimer-shown';
 
 function describeDirection(horizontalCenter: number): string {
   if (horizontalCenter < 0.33) return 'à gauche';
@@ -59,11 +63,39 @@ export default function ObstaclesScreen() {
   const [labels, setLabels] = useState<string[]>([]);
 
   useEffect(() => {
-    speak('Mode Obstacles');
+    (async () => {
+      const marker = new File(Paths.document, DISCLAIMER_MARKER_FILENAME);
+      if (!marker.exists) {
+        speak(
+          "Ceci est une aide complémentaire, pas un remplacement d'une canne blanche ou d'un chien guide. Mode Obstacles."
+        );
+        try {
+          await marker.write('1');
+        } catch {
+          // Non-fatal: worst case the disclaimer repeats on the next launch.
+        }
+      } else {
+        speak('Mode Obstacles');
+      }
+    })();
     return () => {
       stop();
     };
   }, [speak, stop]);
+
+  useEffect(() => {
+    let hasWarnedLowBattery = false;
+    const checkBattery = async () => {
+      const level = await Battery.getBatteryLevelAsync();
+      if (level >= 0 && level < LOW_BATTERY_THRESHOLD && !hasWarnedLowBattery) {
+        hasWarnedLowBattery = true;
+        speak('Batterie faible. Pensez à fermer le mode Obstacles pour économiser votre batterie.');
+      }
+    };
+    checkBattery();
+    const interval = setInterval(checkBattery, BATTERY_CHECK_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [speak]);
 
   useEffect(() => {
     (async () => {

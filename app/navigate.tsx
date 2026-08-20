@@ -3,6 +3,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
+import {
+  ExpoSpeechRecognitionModule,
+  useSpeechRecognitionEvent,
+} from 'expo-speech-recognition';
 import { shouldRecalculateRoute, type Coordinate } from '../src/logic/routeDeviation';
 import { useSpeech } from '../src/hooks/useSpeech';
 import { useHaptics } from '../src/hooks/useHaptics';
@@ -58,18 +62,50 @@ export default function NavigateScreen() {
   const [steps, setSteps] = useState<RouteStep[]>([]);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [isListening, setIsListening] = useState(false);
   const { speak, stop } = useSpeech();
   const { pulse } = useHaptics();
   const watchSubscription = useRef<Location.LocationSubscription | null>(null);
   const currentStepIndexRef = useRef(0);
 
   useEffect(() => {
-    speak('Mode Naviguer. Entrez une destination, puis appuyez sur Démarrer.');
+    speak('Mode Naviguer. Entrez une destination à la voix ou au clavier, puis appuyez sur Démarrer.');
     return () => {
       watchSubscription.current?.remove();
+      ExpoSpeechRecognitionModule.stop();
       stop();
     };
   }, [speak, stop]);
+
+  useSpeechRecognitionEvent('result', (event) => {
+    const transcript = event.results[0]?.transcript;
+    if (transcript) {
+      setDestination(transcript);
+    }
+  });
+
+  useSpeechRecognitionEvent('end', () => {
+    setIsListening(false);
+  });
+
+  useSpeechRecognitionEvent('error', () => {
+    setIsListening(false);
+    speak('Reconnaissance vocale impossible. Réessayez ou tapez votre destination.');
+  });
+
+  const handleVoiceInput = useCallback(async () => {
+    if (isListening) {
+      ExpoSpeechRecognitionModule.stop();
+      return;
+    }
+    const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+    if (!result.granted) {
+      speak('Autorisation microphone requise pour la saisie vocale.');
+      return;
+    }
+    setIsListening(true);
+    ExpoSpeechRecognitionModule.start({ lang: 'fr-FR' });
+  }, [isListening, speak]);
 
   const handleStart = useCallback(async () => {
     watchSubscription.current?.remove();
@@ -118,13 +154,23 @@ export default function NavigateScreen() {
   return (
     <View style={styles.container}>
       <Text style={styles.label}>Destination</Text>
-      <TextInput
-        style={styles.input}
-        value={destination}
-        onChangeText={setDestination}
-        placeholder="Adresse ou lieu"
-        accessibilityLabel="Champ de saisie de la destination"
-      />
+      <View style={styles.inputRow}>
+        <TextInput
+          style={[styles.input, styles.inputFlex]}
+          value={destination}
+          onChangeText={setDestination}
+          placeholder="Adresse ou lieu"
+          accessibilityLabel="Champ de saisie de la destination"
+        />
+        <Pressable
+          style={[styles.micButton, isListening && styles.micButtonActive]}
+          onPress={handleVoiceInput}
+          accessibilityRole="button"
+          accessibilityLabel={isListening ? "Arrêter l'écoute" : 'Dicter la destination à la voix'}
+        >
+          <Text style={styles.micButtonText}>{isListening ? '■' : '🎤'}</Text>
+        </Pressable>
+      </View>
       <Pressable
         style={styles.button}
         onPress={handleStart}
@@ -152,7 +198,18 @@ export default function NavigateScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 24, gap: 16, justifyContent: 'center' },
   label: { fontSize: 18, fontWeight: '600' },
+  inputRow: { flexDirection: 'row', gap: 8, alignItems: 'stretch' },
   input: { borderWidth: 1, borderColor: '#94a3b8', borderRadius: 8, padding: 12, fontSize: 16 },
+  inputFlex: { flex: 1 },
+  micButton: {
+    backgroundColor: '#334155',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  micButtonActive: { backgroundColor: '#dc2626' },
+  micButtonText: { fontSize: 20 },
   button: {
     backgroundColor: '#1d4ed8',
     borderRadius: 12,

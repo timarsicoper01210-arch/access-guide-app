@@ -15,7 +15,9 @@
       }
     },
     "android": {
-      "permissions": ["android.permission.CAMERA"],
+      "permissions": [
+        "android.permission.CAMERA"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -48,6 +50,13 @@
         "expo-location",
         {
           "locationWhenInUsePermission": "Cette application utilise votre position pour vous guider à la marche."
+        }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Cette application utilise le microphone pour saisir votre destination à la voix.",
+          "speechRecognitionPermission": "Cette application utilise la reconnaissance vocale pour saisir votre destination à la voix."
         }
       ]
     ],
