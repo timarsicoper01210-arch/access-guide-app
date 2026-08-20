@@ -29,6 +29,10 @@ import { useHaptics } from '../src/hooks/useHaptics';
 const DETECTION_SCORE_THRESHOLD = 0.6;
 // The camera is throttled to ~5fps so speech and haptics cannot flood the user.
 const CAMERA_CONSTRAINTS: Constraint[] = [{ fps: 5 }];
+// ~2s of consecutive empty frames at 5fps before we forget the last proximity
+// level — long enough to ignore a single dropped-detection flicker, short
+// enough that a genuinely departed obstacle doesn't silence the next one.
+const NO_DETECTION_RESET_FRAMES = 10;
 
 function describeDirection(horizontalCenter: number): string {
   if (horizontalCenter < 0.33) return 'à gauche';
@@ -40,7 +44,7 @@ export default function ObstaclesScreen() {
   const router = useRouter();
   const { hasPermission, requestPermission } = useCameraPermission();
   const device = useCameraDevice('back');
-  const { resizer } = useResizer({
+  const { resizer, state: resizerState } = useResizer({
     width: 300,
     height: 300,
     channelOrder: 'rgb',
@@ -51,6 +55,7 @@ export default function ObstaclesScreen() {
   const { speak, stop } = useSpeech();
   const { pulse } = useHaptics();
   const previousLevelRef = useRef<ProximityLevel>('far');
+  const emptyFrameCountRef = useRef(0);
   const [labels, setLabels] = useState<string[]>([]);
 
   useEffect(() => {
@@ -90,6 +95,12 @@ export default function ObstaclesScreen() {
   }, [plugin.state, speak]);
 
   useEffect(() => {
+    if (resizerState === 'error') {
+      speak("Impossible de préparer la détection d'obstacles. Réessayez.");
+    }
+  }, [resizerState, speak]);
+
+  useEffect(() => {
     if (!hasPermission) {
       requestPermission().then((granted) => {
         if (!granted) {
@@ -101,6 +112,7 @@ export default function ObstaclesScreen() {
 
   const handleDetection = useCallback(
     (labelIndex: number, boxHeightRatio: number, horizontalCenter: number) => {
+      emptyFrameCountRef.current = 0;
       const level = getProximityLevel(boxHeightRatio);
       if (shouldAnnounce(previousLevelRef.current, level)) {
         const englishLabel = labels[labelIndex] ?? 'object';
@@ -114,10 +126,15 @@ export default function ObstaclesScreen() {
     [labels, pulse, speak]
   );
 
-  // Without this reset, a stale 'close'/'near' memory would silence every later
-  // obstacle once the current one leaves the frame.
+  // Debounced: without this reset, a stale 'close'/'near' memory would silence
+  // every later obstacle once the current one leaves the frame. Requiring
+  // several consecutive empty frames (rather than resetting on the first one)
+  // avoids re-announcing the same obstacle when detection briefly flickers.
   const handleNoDetection = useCallback(() => {
-    previousLevelRef.current = 'far';
+    emptyFrameCountRef.current += 1;
+    if (emptyFrameCountRef.current >= NO_DETECTION_RESET_FRAMES) {
+      previousLevelRef.current = 'far';
+    }
   }, []);
 
   const frameOutput = useFrameOutput({
@@ -156,7 +173,7 @@ export default function ObstaclesScreen() {
     },
   });
 
-  if (!hasPermission || device == null || boxedModel == null || labels.length === 0) {
+  if (!hasPermission || device == null || boxedModel == null || labels.length === 0 || resizer == null) {
     return (
       <View style={styles.center}>
         <ActivityIndicator />
