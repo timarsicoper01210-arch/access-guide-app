@@ -25,3 +25,11 @@ export function getHapticIntensity(level: ProximityLevel): HapticIntensity {
   if (level === 'near') return 'medium';
   return 'light';
 }
+
+// Beep cadence increases with proximity: silent when far, every other
+// qualifying frame when near, every qualifying frame when close.
+export function shouldBeep(level: ProximityLevel, frameCounter: number): boolean {
+  if (level === 'far') return false;
+  if (level === 'close') return true;
+  return frameCounter % 2 === 0;
+}

@@ -2,6 +2,7 @@ import {
   getProximityLevel,
   shouldAnnounce,
   getHapticIntensity,
+  shouldBeep,
 } from '../src/logic/proximityThreshold';
 
 describe('getProximityLevel', () => {
@@ -52,5 +53,26 @@ describe('getHapticIntensity', () => {
 
   it('maps close to heavy', () => {
     expect(getHapticIntensity('close')).toBe('heavy');
+  });
+});
+
+describe('shouldBeep', () => {
+  it('never beeps when far', () => {
+    expect(shouldBeep('far', 0)).toBe(false);
+    expect(shouldBeep('far', 1)).toBe(false);
+    expect(shouldBeep('far', 100)).toBe(false);
+  });
+
+  it('always beeps when close', () => {
+    expect(shouldBeep('close', 0)).toBe(true);
+    expect(shouldBeep('close', 1)).toBe(true);
+    expect(shouldBeep('close', 7)).toBe(true);
+  });
+
+  it('beeps every other frame when near, producing a lower frequency than close', () => {
+    expect(shouldBeep('near', 0)).toBe(true);
+    expect(shouldBeep('near', 1)).toBe(false);
+    expect(shouldBeep('near', 2)).toBe(true);
+    expect(shouldBeep('near', 3)).toBe(false);
   });
 });

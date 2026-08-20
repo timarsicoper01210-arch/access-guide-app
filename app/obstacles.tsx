@@ -16,16 +16,21 @@ import { scheduleOnRN } from 'react-native-worklets';
 import { Asset } from 'expo-asset';
 import { File, Paths } from 'expo-file-system';
 import * as Battery from 'expo-battery';
+import { useAudioPlayer } from 'expo-audio';
 import {
   getProximityLevel,
   shouldAnnounce,
   getHapticIntensity,
+  shouldBeep,
   type ProximityLevel,
 } from '../src/logic/proximityThreshold';
 import { parseLabelmapIndexed } from '../src/logic/labelmapIndexed';
 import { translateLabel } from '../src/logic/labelTranslations';
+import { generateBeepDataUri } from '../src/logic/beepSound';
 import { useSpeech } from '../src/hooks/useSpeech';
 import { useHaptics } from '../src/hooks/useHaptics';
+
+const BEEP_DATA_URI = generateBeepDataUri();
 
 const DETECTION_SCORE_THRESHOLD = 0.6;
 // The camera is throttled to ~5fps so speech and haptics cannot flood the user.
@@ -58,8 +63,10 @@ export default function ObstaclesScreen() {
   });
   const { speak, stop } = useSpeech();
   const { pulse } = useHaptics();
+  const beepPlayer = useAudioPlayer(BEEP_DATA_URI);
   const previousLevelRef = useRef<ProximityLevel>('far');
   const emptyFrameCountRef = useRef(0);
+  const beepFrameCounterRef = useRef(0);
   const [labels, setLabels] = useState<string[]>([]);
 
   useEffect(() => {
@@ -153,9 +160,14 @@ export default function ObstaclesScreen() {
         speak(`${frenchLabel}, ${direction}${level === 'close' ? ', proche' : ''}`);
       }
       pulse(getHapticIntensity(level));
+      beepFrameCounterRef.current += 1;
+      if (shouldBeep(level, beepFrameCounterRef.current)) {
+        beepPlayer.seekTo(0);
+        beepPlayer.play();
+      }
       previousLevelRef.current = level;
     },
-    [labels, pulse, speak]
+    [beepPlayer, labels, pulse, speak]
   );
 
   // Debounced: without this reset, a stale 'close'/'near' memory would silence
