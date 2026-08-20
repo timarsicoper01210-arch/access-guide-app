@@ -48,3 +48,11 @@ export function findNearestPoint(current: Coordinate, routePoints: Coordinate[])
 
   return nearest;
 }
+
+export function estimateSecondsToArrival(
+  distanceMeters: number,
+  speedMetersPerSecond: number
+): number {
+  if (speedMetersPerSecond <= 0) return Infinity;
+  return distanceMeters / speedMetersPerSecond;
+}

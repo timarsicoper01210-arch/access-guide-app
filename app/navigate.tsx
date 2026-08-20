@@ -10,12 +10,20 @@ import {
 import {
   shouldRecalculateRoute,
   findNearestPoint,
+  distanceInMeters,
+  estimateSecondsToArrival,
   type Coordinate,
 } from '../src/logic/routeDeviation';
 import { useSpeech } from '../src/hooks/useSpeech';
 import { useHaptics } from '../src/hooks/useHaptics';
 
 const ORS_API_KEY = 'REPLACE_WITH_YOUR_OPENROUTESERVICE_KEY';
+// Used only as a fallback when the device doesn't report a GPS speed
+// (e.g. simulators, or a brief signal dip) — a reasonable average walking pace.
+const FALLBACK_WALKING_SPEED_MPS = 1.4;
+const TURN_WARNING_SECONDS = 5;
+const GPS_SIGNAL_TIMEOUT_MS = 15000;
+const GPS_SIGNAL_CHECK_INTERVAL_MS = 5000;
 
 interface RouteStep {
   instruction: string;
@@ -86,11 +94,16 @@ export default function NavigateScreen() {
   const routePolylineRef = useRef<Coordinate[]>([]);
   const isRecalculatingRef = useRef(false);
   const destinationQueryRef = useRef('');
+  const preWarnedStepRef = useRef(-1);
+  const lastLocationUpdateAtRef = useRef(0);
+  const hasWarnedSignalLossRef = useRef(false);
+  const gpsWatchdogInterval = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     speak('Mode Naviguer. Entrez une destination à la voix ou au clavier, puis appuyez sur Démarrer.');
     return () => {
       watchSubscription.current?.remove();
+      if (gpsWatchdogInterval.current != null) clearInterval(gpsWatchdogInterval.current);
       ExpoSpeechRecognitionModule.stop();
       stop();
     };
@@ -150,6 +163,9 @@ export default function NavigateScreen() {
 
   const handleLocationUpdate = useCallback(
     (update: Location.LocationObject) => {
+      lastLocationUpdateAtRef.current = Date.now();
+      hasWarnedSignalLossRef.current = false;
+
       const current: Coordinate = {
         latitude: update.coords.latitude,
         longitude: update.coords.longitude,
@@ -164,6 +180,23 @@ export default function NavigateScreen() {
         return;
       }
 
+      // Short vibration ~5s before the upcoming turn, once per step — distinct
+      // from the arrival pulse above, which fires when the waypoint is reached.
+      if (nextStep && preWarnedStepRef.current !== currentStepIndexRef.current) {
+        const speed =
+          update.coords.speed != null && update.coords.speed > 0.1
+            ? update.coords.speed
+            : FALLBACK_WALKING_SPEED_MPS;
+        const eta = estimateSecondsToArrival(
+          distanceInMeters(current, nextStep.location),
+          speed
+        );
+        if (eta <= TURN_WARNING_SECONDS) {
+          preWarnedStepRef.current = currentStepIndexRef.current;
+          pulse('light');
+        }
+      }
+
       if (routePolylineRef.current.length > 0) {
         const nearest = findNearestPoint(current, routePolylineRef.current);
         if (shouldRecalculateRoute(current, nearest)) {
@@ -176,8 +209,11 @@ export default function NavigateScreen() {
 
   const handleStart = useCallback(async () => {
     watchSubscription.current?.remove();
+    if (gpsWatchdogInterval.current != null) clearInterval(gpsWatchdogInterval.current);
     setIsLoading(true);
     destinationQueryRef.current = destination;
+    preWarnedStepRef.current = -1;
+    hasWarnedSignalLossRef.current = false;
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
@@ -198,10 +234,18 @@ export default function NavigateScreen() {
       currentStepIndexRef.current = 0;
       speak(route.steps[0]?.instruction ?? 'Itinéraire introuvable.');
 
+      lastLocationUpdateAtRef.current = Date.now();
       watchSubscription.current = await Location.watchPositionAsync(
         { accuracy: Location.Accuracy.High, distanceInterval: 5 },
         handleLocationUpdate
       );
+      gpsWatchdogInterval.current = setInterval(() => {
+        const elapsed = Date.now() - lastLocationUpdateAtRef.current;
+        if (elapsed > GPS_SIGNAL_TIMEOUT_MS && !hasWarnedSignalLossRef.current) {
+          hasWarnedSignalLossRef.current = true;
+          speak('Signal GPS perdu. Nouvelle tentative en cours.');
+        }
+      }, GPS_SIGNAL_CHECK_INTERVAL_MS);
     } catch {
       speak("Impossible de calculer l'itinéraire. Vérifiez votre connexion et réessayez.");
     } finally {

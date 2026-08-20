@@ -2,6 +2,7 @@ import {
   distanceInMeters,
   shouldRecalculateRoute,
   findNearestPoint,
+  estimateSecondsToArrival,
 } from '../src/logic/routeDeviation';
 
 describe('distanceInMeters', () => {
@@ -49,5 +50,20 @@ describe('findNearestPoint', () => {
   it('throws on an empty route', () => {
     const current = { latitude: 48.8566, longitude: 2.3522 };
     expect(() => findNearestPoint(current, [])).toThrow();
+  });
+});
+
+describe('estimateSecondsToArrival', () => {
+  it('divides distance by speed', () => {
+    expect(estimateSecondsToArrival(10, 2)).toBe(5);
+  });
+
+  it('returns Infinity when speed is zero or negative (stationary/invalid)', () => {
+    expect(estimateSecondsToArrival(10, 0)).toBe(Infinity);
+    expect(estimateSecondsToArrival(10, -1)).toBe(Infinity);
+  });
+
+  it('returns 0 when already at the destination', () => {
+    expect(estimateSecondsToArrival(0, 1.4)).toBe(0);
   });
 });
