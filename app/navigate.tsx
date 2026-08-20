@@ -7,7 +7,11 @@ import {
   ExpoSpeechRecognitionModule,
   useSpeechRecognitionEvent,
 } from 'expo-speech-recognition';
-import { shouldRecalculateRoute, type Coordinate } from '../src/logic/routeDeviation';
+import {
+  shouldRecalculateRoute,
+  findNearestPoint,
+  type Coordinate,
+} from '../src/logic/routeDeviation';
 import { useSpeech } from '../src/hooks/useSpeech';
 import { useHaptics } from '../src/hooks/useHaptics';
 
@@ -18,10 +22,15 @@ interface RouteStep {
   location: Coordinate;
 }
 
+interface WalkingRoute {
+  steps: RouteStep[];
+  polyline: Coordinate[];
+}
+
 async function fetchWalkingRoute(
   origin: Coordinate,
   destinationQuery: string
-): Promise<RouteStep[]> {
+): Promise<WalkingRoute> {
   const geocodeResponse = await fetch(
     `https://api.openrouteservice.org/geocode/search?api_key=${ORS_API_KEY}&text=${encodeURIComponent(
       destinationQuery
@@ -50,10 +59,16 @@ async function fetchWalkingRoute(
     throw new Error('No walking route found for destination');
   }
 
-  return segments.map((step: { instruction: string; way_points: [number, number] }) => {
+  const steps = segments.map((step: { instruction: string; way_points: [number, number] }) => {
     const [lon, lat] = coordinates[step.way_points[0]];
     return { instruction: step.instruction, location: { latitude: lat, longitude: lon } };
   });
+  const polyline = coordinates.map(([lon, lat]: [number, number]) => ({
+    latitude: lat,
+    longitude: lon,
+  }));
+
+  return { steps, polyline };
 }
 
 export default function NavigateScreen() {
@@ -67,6 +82,10 @@ export default function NavigateScreen() {
   const { pulse } = useHaptics();
   const watchSubscription = useRef<Location.LocationSubscription | null>(null);
   const currentStepIndexRef = useRef(0);
+  const routeStepsRef = useRef<RouteStep[]>([]);
+  const routePolylineRef = useRef<Coordinate[]>([]);
+  const isRecalculatingRef = useRef(false);
+  const destinationQueryRef = useRef('');
 
   useEffect(() => {
     speak('Mode Naviguer. Entrez une destination à la voix ou au clavier, puis appuyez sur Démarrer.');
@@ -107,9 +126,58 @@ export default function NavigateScreen() {
     ExpoSpeechRecognitionModule.start({ lang: 'fr-FR' });
   }, [isListening, speak]);
 
+  const recalculateRoute = useCallback(
+    async (current: Coordinate) => {
+      if (isRecalculatingRef.current) return;
+      isRecalculatingRef.current = true;
+      speak("Écart par rapport à l'itinéraire. Recalcul en cours.");
+      try {
+        const route = await fetchWalkingRoute(current, destinationQueryRef.current);
+        routeStepsRef.current = route.steps;
+        routePolylineRef.current = route.polyline;
+        currentStepIndexRef.current = 0;
+        setSteps(route.steps);
+        setCurrentStepIndex(0);
+        speak(route.steps[0]?.instruction ?? 'Nouvel itinéraire introuvable.');
+      } catch {
+        speak("Impossible de recalculer l'itinéraire. Vérifiez votre connexion.");
+      } finally {
+        isRecalculatingRef.current = false;
+      }
+    },
+    [speak]
+  );
+
+  const handleLocationUpdate = useCallback(
+    (update: Location.LocationObject) => {
+      const current: Coordinate = {
+        latitude: update.coords.latitude,
+        longitude: update.coords.longitude,
+      };
+
+      const nextStep = routeStepsRef.current[currentStepIndexRef.current + 1];
+      if (nextStep && shouldRecalculateRoute(current, nextStep.location) === false) {
+        currentStepIndexRef.current += 1;
+        setCurrentStepIndex(currentStepIndexRef.current);
+        pulse('medium');
+        speak(nextStep.instruction);
+        return;
+      }
+
+      if (routePolylineRef.current.length > 0) {
+        const nearest = findNearestPoint(current, routePolylineRef.current);
+        if (shouldRecalculateRoute(current, nearest)) {
+          recalculateRoute(current);
+        }
+      }
+    },
+    [pulse, speak, recalculateRoute]
+  );
+
   const handleStart = useCallback(async () => {
     watchSubscription.current?.remove();
     setIsLoading(true);
+    destinationQueryRef.current = destination;
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
@@ -122,34 +190,24 @@ export default function NavigateScreen() {
         latitude: position.coords.latitude,
         longitude: position.coords.longitude,
       };
-      const routeSteps = await fetchWalkingRoute(origin, destination);
-      setSteps(routeSteps);
+      const route = await fetchWalkingRoute(origin, destination);
+      routeStepsRef.current = route.steps;
+      routePolylineRef.current = route.polyline;
+      setSteps(route.steps);
       setCurrentStepIndex(0);
       currentStepIndexRef.current = 0;
-      speak(routeSteps[0]?.instruction ?? 'Itinéraire introuvable.');
+      speak(route.steps[0]?.instruction ?? 'Itinéraire introuvable.');
 
       watchSubscription.current = await Location.watchPositionAsync(
         { accuracy: Location.Accuracy.High, distanceInterval: 5 },
-        (update) => {
-          const current: Coordinate = {
-            latitude: update.coords.latitude,
-            longitude: update.coords.longitude,
-          };
-          const nextStep = routeSteps[currentStepIndexRef.current + 1];
-          if (nextStep && shouldRecalculateRoute(current, nextStep.location) === false) {
-            currentStepIndexRef.current += 1;
-            setCurrentStepIndex(currentStepIndexRef.current);
-            pulse('medium');
-            speak(nextStep.instruction);
-          }
-        }
+        handleLocationUpdate
       );
     } catch {
       speak("Impossible de calculer l'itinéraire. Vérifiez votre connexion et réessayez.");
     } finally {
       setIsLoading(false);
     }
-  }, [destination, pulse, router, speak]);
+  }, [destination, router, speak, handleLocationUpdate]);
 
   return (
     <View style={styles.container}>

@@ -29,3 +29,22 @@ export function shouldRecalculateRoute(
 ): boolean {
   return distanceInMeters(current, nearestPointOnRoute) > DEVIATION_THRESHOLD_METERS;
 }
+
+export function findNearestPoint(current: Coordinate, routePoints: Coordinate[]): Coordinate {
+  if (routePoints.length === 0) {
+    throw new Error('findNearestPoint requires a non-empty routePoints array');
+  }
+
+  let nearest = routePoints[0]!;
+  let nearestDistance = distanceInMeters(current, nearest);
+
+  for (const point of routePoints.slice(1)) {
+    const distance = distanceInMeters(current, point);
+    if (distance < nearestDistance) {
+      nearest = point;
+      nearestDistance = distance;
+    }
+  }
+
+  return nearest;
+}

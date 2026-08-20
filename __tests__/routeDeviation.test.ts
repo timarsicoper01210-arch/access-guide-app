@@ -1,6 +1,7 @@
 import {
   distanceInMeters,
   shouldRecalculateRoute,
+  findNearestPoint,
 } from '../src/logic/routeDeviation';
 
 describe('distanceInMeters', () => {
@@ -28,5 +29,25 @@ describe('shouldRecalculateRoute', () => {
     const current = { latitude: 48.8566, longitude: 2.3522 };
     const nearestOnRoute = { latitude: 48.85675, longitude: 2.3522 }; // ~16.7m
     expect(shouldRecalculateRoute(current, nearestOnRoute)).toBe(true);
+  });
+});
+
+describe('findNearestPoint', () => {
+  it('returns the single point when the list has only one entry', () => {
+    const current = { latitude: 48.8566, longitude: 2.3522 };
+    const only = { latitude: 48.86, longitude: 2.36 };
+    expect(findNearestPoint(current, [only])).toEqual(only);
+  });
+
+  it('picks the closest of several candidate points', () => {
+    const current = { latitude: 48.8566, longitude: 2.3522 };
+    const near = { latitude: 48.85661, longitude: 2.3522 }; // ~1.1m
+    const far = { latitude: 48.9, longitude: 2.4 };
+    expect(findNearestPoint(current, [far, near])).toEqual(near);
+  });
+
+  it('throws on an empty route', () => {
+    const current = { latitude: 48.8566, longitude: 2.3522 };
+    expect(() => findNearestPoint(current, [])).toThrow();
   });
 });
