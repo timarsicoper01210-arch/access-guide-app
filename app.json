@@ -11,12 +11,19 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSCameraUsageDescription": "Cette application utilise la caméra pour détecter les obstacles devant vous et décrire votre environnement à voix haute."
-      }
+        "NSCameraUsageDescription": "Cette application utilise la caméra pour détecter les obstacles devant vous et décrire votre environnement à voix haute.",
+        "NSSpeechRecognitionUsageDescription": "Cette application utilise la reconnaissance vocale pour saisir votre destination à la voix.",
+        "NSMicrophoneUsageDescription": "Cette application utilise le microphone pour saisir votre destination à la voix."
+      },
+      "bundleIdentifier": "com.anonymous.accessguideapp"
     },
     "android": {
       "permissions": [
-        "android.permission.CAMERA"
+        "android.permission.CAMERA",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
       ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
@@ -25,7 +32,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.anonymous.accessguideapp"
     },
     "web": {
       "output": "static",
@@ -59,7 +67,15 @@
           "speechRecognitionPermission": "Cette application utilise la reconnaissance vocale pour saisir votre destination à la voix."
         }
       ],
-      "expo-audio"
+      "expo-audio",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "15.5"
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
