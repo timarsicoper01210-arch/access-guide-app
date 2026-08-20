@@ -14,8 +14,15 @@ export default function DescribeScreen() {
   const device = useCameraDevice('back');
   const photoOutput = usePhotoOutput();
   const [isProcessing, setIsProcessing] = useState(false);
-  const { speak } = useSpeech();
+  const { speak, stop } = useSpeech();
   const faceDetector = useImageFaceDetector({ performanceMode: 'fast' });
+
+  useEffect(() => {
+    speak('Mode Décrire. Appuyez sur le bouton pour décrire ce qui vous entoure.');
+    return () => {
+      stop();
+    };
+  }, [speak, stop]);
 
   useEffect(() => {
     if (!hasPermission) {
@@ -45,6 +52,8 @@ export default function DescribeScreen() {
           faceCount: faces.length,
         })
       );
+    } catch {
+      speak("Impossible d'analyser l'image. Réessayez.");
     } finally {
       setIsProcessing(false);
     }
@@ -54,6 +63,14 @@ export default function DescribeScreen() {
     return (
       <View style={styles.center}>
         <ActivityIndicator />
+        <Pressable
+          style={styles.backButtonInline}
+          onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel="Retour"
+        >
+          <Text style={styles.backText}>Retour</Text>
+        </Pressable>
       </View>
     );
   }
@@ -69,6 +86,14 @@ export default function DescribeScreen() {
         accessibilityLabel="Décrire ce que voit la caméra"
       >
         <Text style={styles.captureText}>{isProcessing ? '...' : 'Décrire'}</Text>
+      </Pressable>
+      <Pressable
+        style={styles.backButton}
+        onPress={() => router.back()}
+        accessibilityRole="button"
+        accessibilityLabel="Retour"
+      >
+        <Text style={styles.backText}>Retour</Text>
       </Pressable>
     </View>
   );
@@ -87,4 +112,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
   },
   captureText: { color: '#fff', fontSize: 22, fontWeight: '700' },
+  backButton: {
+    position: 'absolute',
+    top: 64,
+    left: 24,
+    backgroundColor: '#334155',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+  },
+  backButtonInline: {
+    marginTop: 24,
+    backgroundColor: '#334155',
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+  },
+  backText: { color: '#fff', fontSize: 18, fontWeight: '600' },
 });

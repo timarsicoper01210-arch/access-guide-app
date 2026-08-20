@@ -23,15 +23,28 @@ async function fetchWalkingRoute(
       destinationQuery
     )}&size=1`
   );
+  if (!geocodeResponse.ok) {
+    throw new Error(`Geocoding failed with status ${geocodeResponse.status}`);
+  }
   const geocodeJson = await geocodeResponse.json();
-  const [destLon, destLat] = geocodeJson.features[0].geometry.coordinates;
+  const destination = geocodeJson?.features?.[0]?.geometry?.coordinates;
+  if (destination == null) {
+    throw new Error('No geocoding result for destination');
+  }
+  const [destLon, destLat] = destination;
 
   const directionsResponse = await fetch(
     `https://api.openrouteservice.org/v2/directions/foot-walking?api_key=${ORS_API_KEY}&start=${origin.longitude},${origin.latitude}&end=${destLon},${destLat}`
   );
+  if (!directionsResponse.ok) {
+    throw new Error(`Directions request failed with status ${directionsResponse.status}`);
+  }
   const directionsJson = await directionsResponse.json();
-  const segments = directionsJson.features[0].properties.segments[0].steps;
-  const coordinates = directionsJson.features[0].geometry.coordinates;
+  const segments = directionsJson?.features?.[0]?.properties?.segments?.[0]?.steps;
+  const coordinates = directionsJson?.features?.[0]?.geometry?.coordinates;
+  if (segments == null || coordinates == null) {
+    throw new Error('No walking route found for destination');
+  }
 
   return segments.map((step: { instruction: string; way_points: [number, number] }) => {
     const [lon, lat] = coordinates[step.way_points[0]];
@@ -45,27 +58,29 @@ export default function NavigateScreen() {
   const [steps, setSteps] = useState<RouteStep[]>([]);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
-  const { speak } = useSpeech();
+  const { speak, stop } = useSpeech();
   const { pulse } = useHaptics();
   const watchSubscription = useRef<Location.LocationSubscription | null>(null);
   const currentStepIndexRef = useRef(0);
 
   useEffect(() => {
+    speak('Mode Naviguer. Entrez une destination, puis appuyez sur Démarrer.');
     return () => {
       watchSubscription.current?.remove();
+      stop();
     };
-  }, []);
+  }, [speak, stop]);
 
   const handleStart = useCallback(async () => {
     watchSubscription.current?.remove();
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') {
-      router.replace({ pathname: '/permissions-needed', params: { permission: 'location' } });
-      return;
-    }
-
     setIsLoading(true);
     try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        router.replace({ pathname: '/permissions-needed', params: { permission: 'location' } });
+        return;
+      }
+
       const position = await Location.getCurrentPositionAsync({});
       const origin: Coordinate = {
         latitude: position.coords.latitude,
@@ -93,10 +108,12 @@ export default function NavigateScreen() {
           }
         }
       );
+    } catch {
+      speak("Impossible de calculer l'itinéraire. Vérifiez votre connexion et réessayez.");
     } finally {
       setIsLoading(false);
     }
-  }, [currentStepIndex, destination, pulse, router, speak]);
+  }, [destination, pulse, router, speak]);
 
   return (
     <View style={styles.container}>
@@ -120,6 +137,14 @@ export default function NavigateScreen() {
       {steps[currentStepIndex] && (
         <Text style={styles.instruction}>{steps[currentStepIndex].instruction}</Text>
       )}
+      <Pressable
+        style={styles.secondaryButton}
+        onPress={() => router.back()}
+        accessibilityRole="button"
+        accessibilityLabel="Retour"
+      >
+        <Text style={styles.buttonText}>Retour</Text>
+      </Pressable>
     </View>
   );
 }
@@ -130,6 +155,12 @@ const styles = StyleSheet.create({
   input: { borderWidth: 1, borderColor: '#94a3b8', borderRadius: 8, padding: 12, fontSize: 16 },
   button: {
     backgroundColor: '#1d4ed8',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+  },
+  secondaryButton: {
+    backgroundColor: '#334155',
     borderRadius: 12,
     padding: 16,
     alignItems: 'center',
