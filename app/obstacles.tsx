@@ -67,6 +67,7 @@ export default function ObstaclesScreen() {
   const previousLevelRef = useRef<ProximityLevel>('far');
   const emptyFrameCountRef = useRef(0);
   const beepFrameCounterRef = useRef(0);
+  const hasWarnedResizeErrorRef = useRef(false);
   const [labels, setLabels] = useState<string[]>([]);
 
   useEffect(() => {
@@ -181,6 +182,17 @@ export default function ObstaclesScreen() {
     }
   }, []);
 
+  // Some devices/environments (older GPUs, some emulators) can't satisfy the
+  // resizer's AHardwareBuffer/Vulkan requirements per-frame even though the
+  // resizer itself initialized successfully. Without this, that surfaces as
+  // a silent, unbounded stream of console errors instead of telling the user
+  // anything. Announced once, not per-frame.
+  const handleResizeError = useCallback(() => {
+    if (hasWarnedResizeErrorRef.current) return;
+    hasWarnedResizeErrorRef.current = true;
+    speak("Détection d'obstacles indisponible sur cet appareil.");
+  }, [speak]);
+
   const frameOutput = useFrameOutput({
     // The GPU resizer requires a 'yuv' input frame on iOS.
     pixelFormat: 'yuv',
@@ -190,7 +202,13 @@ export default function ObstaclesScreen() {
         if (boxedModel == null || resizer == null) return;
         const tflite = boxedModel.unbox();
 
-        const resized = resizer.resize(frame);
+        let resized;
+        try {
+          resized = resizer.resize(frame);
+        } catch {
+          scheduleOnRN(handleResizeError);
+          return;
+        }
         try {
           const pixels = resized.getPixelBuffer();
           const outputs = tflite.runSync([pixels]);
