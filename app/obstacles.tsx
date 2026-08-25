@@ -9,7 +9,7 @@ import {
   useFrameOutput,
   type Constraint,
 } from 'react-native-vision-camera';
-import { useTensorflowModel } from 'react-native-fast-tflite';
+import { loadTensorflowModel, type TensorflowModel } from 'react-native-fast-tflite';
 import { useResizer } from 'react-native-vision-camera-resizer';
 import { NitroModules } from 'react-native-nitro-modules';
 import { scheduleOnRN } from 'react-native-worklets';
@@ -118,21 +118,42 @@ export default function ObstaclesScreen() {
     })();
   }, [speak]);
 
-  const plugin = useTensorflowModel(
-    require('../assets/models/ssd_mobilenet_v1.tflite'),
-    Platform.OS === 'ios' ? ['core-ml'] : []
-  );
-  const model = plugin.state === 'loaded' ? plugin.model : undefined;
+  const [modelState, setModelState] = useState<{
+    state: 'loading' | 'loaded' | 'error';
+    model?: TensorflowModel;
+  }>({ state: 'loading' });
+
+  useEffect(() => {
+    (async () => {
+      try {
+        // require() alone resolves to a bare Android resource name (not a
+        // URL) in release builds, which react-native-fast-tflite's native
+        // asset loader can't open — resolve a real file:// URI via
+        // expo-asset first, same as the labelmap above.
+        const asset = Asset.fromModule(require('../assets/models/ssd_mobilenet_v1.tflite'));
+        await asset.downloadAsync();
+        const loadedModel = await loadTensorflowModel(
+          { url: asset.localUri! },
+          Platform.OS === 'ios' ? ['core-ml'] : []
+        );
+        setModelState({ state: 'loaded', model: loadedModel });
+      } catch {
+        setModelState({ state: 'error' });
+      }
+    })();
+  }, []);
+
+  const model = modelState.state === 'loaded' ? modelState.model : undefined;
   const boxedModel = useMemo(
     () => (model != null ? NitroModules.box(model) : undefined),
     [model]
   );
 
   useEffect(() => {
-    if (plugin.state === 'error') {
+    if (modelState.state === 'error') {
       speak("Impossible de charger la détection d'obstacles. Réessayez.");
     }
-  }, [plugin.state, speak]);
+  }, [modelState.state, speak]);
 
   useEffect(() => {
     if (resizerState === 'error') {
