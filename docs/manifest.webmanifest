@@ -1,0 +1,13 @@
+{
+  "name": "Access Guide",
+  "short_name": "Access Guide",
+  "description": "Aide au déplacement et à l'environnement pour personnes malvoyantes ou handicapées.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#f7f8fb",
+  "theme_color": "#1d4ed8",
+  "lang": "fr",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
